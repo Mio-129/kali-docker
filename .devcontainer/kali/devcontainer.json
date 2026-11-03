@@ -1,0 +1,15 @@
+{
+  "name": "Kali Linux (dogrudan, Docker'siz)",
+  "build": {
+    "dockerfile": "../../Dockerfile",
+    "context": "../.."
+  },
+  "remoteUser": "root",
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash"
+      }
+    }
+  }
+}

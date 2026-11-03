@@ -1,0 +1,29 @@
+{
+  "name": "Kali Docker (Codespaces)",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {
+      "version": "latest",
+      "moby": true
+    }
+  },
+  "remoteUser": "vscode",
+  "postCreateCommand": "bash .devcontainer/setup-kali.sh",
+  "postStartCommand": "bash .devcontainer/setup-kali.sh --start-only",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-azuretools.vscode-containers"
+      ],
+      "settings": {
+        "terminal.integrated.profiles.linux": {
+          "Kali Linux": {
+            "path": "bash",
+            "args": ["-lc", "kali"],
+            "icon": "terminal-bash"
+          }
+        }
+      }
+    }
+  }
+}
