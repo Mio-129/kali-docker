@@ -2,19 +2,29 @@
 #
 # GitHub Codespaces acildiginda (postCreateCommand) Docker komutlariyla Kali Linux'u kurar:
 #   1. docker pull  -> Kali taban imaji
-#   2. docker build -> depodaki Dockerfile'dan yerel Kali imaji
-#   3. docker run   -> calisan, calisma alanini goren Kali konteyneri
-#   4. `kali`       -> konteynere giren kisa yol komutu
+#   2. docker build -> Dockerfile / cli hedefi (terminal imaji)
+#   3. docker build -> Dockerfile / desktop hedefi (XFCE + noVNC masaustu imaji)
+#   4. docker run   -> 6080 (noVNC) ve 5901 (VNC) portlarini yayinlayan Kali konteyneri
+#   5. `kali`       -> konteynere giren kisa yol komutu
 #
 # Kullanim:
 #   bash .devcontainer/setup-kali.sh               # ilk kurulum (postCreateCommand)
 #   bash .devcontainer/setup-kali.sh --start-only  # yeniden baslatma (postStartCommand)
 #
 # Ortam degiskenleri:
-#   KALI_IMAGE      yerel imaj adi            (varsayilan: kali-docker:local)
-#   KALI_CONTAINER  konteyner adi            (varsayilan: kali)
-#   KALI_WORKSPACE  konteynere baglanan dizin (varsayilan: repo koku)
-#   KALI_DOCKER_WAIT_ATTEMPTS  daemon icin 2 saniyelik deneme sayisi (varsayilan: 45)
+#   KALI_DESKTOP              1 = noVNC masaustu acik, 0 = sadece terminal (varsayilan: 1)
+#   KALI_IMAGE                CLI imaji             (kali-docker:local)
+#   KALI_DESKTOP_IMAGE        masaustu imaji        (kali-docker:desktop)
+#   KALI_CONTAINER            konteyner adi         (kali)
+#   KALI_WORKSPACE            baglanan dizin        (repo koku)
+#   KALI_WEB_PORT             noVNC host portu      (6080)
+#   KALI_VNC_PORT             VNC host portu        (5901)
+#   KALI_VNC_PASSWORD         noVNC/VNC sifresi     (kali)
+#   KALI_VNC_RESOLUTION       ekran cozunurlugu     (1280x800x24)
+#   KALI_PORTAINER            1 = Docker web paneli (varsayilan: 0)
+#   KALI_PORTAINER_PORT       Portainer host portu  (9443)
+#   KALI_DOCKER_WAIT_ATTEMPTS daemon deneme sayisi  (45, her biri 2 saniye)
+#   KALI_DESKTOP_WAIT_ATTEMPTS noVNC deneme sayisi (30, her biri 1 saniye)
 
 set -euo pipefail
 
@@ -26,10 +36,25 @@ fi
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BASE_IMAGE="kalilinux/kali-rolling"
 IMAGE="${KALI_IMAGE:-kali-docker:local}"
+DESKTOP_IMAGE="${KALI_DESKTOP_IMAGE:-kali-docker:desktop}"
+DESKTOP="${KALI_DESKTOP:-1}"
 CONTAINER="${KALI_CONTAINER:-kali}"
 WORKSPACE="${KALI_WORKSPACE:-$ROOT_DIR}"
-DOCKER=(docker)
+WEB_PORT="${KALI_WEB_PORT:-6080}"
+VNC_PORT="${KALI_VNC_PORT:-5901}"
+VNC_PASSWORD="${KALI_VNC_PASSWORD:-kali}"
+RESOLUTION="${KALI_VNC_RESOLUTION:-1280x800x24}"
+PORTAINER="${KALI_PORTAINER:-0}"
+PORTAINER_PORT="${KALI_PORTAINER_PORT:-9443}"
+PORTAINER_CONTAINER="${KALI_PORTAINER_CONTAINER:-portainer}"
 WAIT_ATTEMPTS="${KALI_DOCKER_WAIT_ATTEMPTS:-45}"
+DESKTOP_WAIT_ATTEMPTS="${KALI_DESKTOP_WAIT_ATTEMPTS:-30}"
+DOCKER=(docker)
+
+TARGET_IMAGE="${IMAGE}"
+if [[ "${DESKTOP}" == "1" ]]; then
+    TARGET_IMAGE="${DESKTOP_IMAGE}"
+fi
 
 log() { printf '\n==> %s\n' "$*"; }
 warn() { printf '(!) %s\n' "$*" >&2; }
@@ -51,14 +76,96 @@ wait_for_docker() {
     return 1
 }
 
-build_image() {
+build_cli_image() {
     log "Kali taban imaji cekiliyor: ${BASE_IMAGE}"
     # Gecici Docker Hub hatalarinda build zaten taban imaji cekecegi icin pull'i zorunlu kilmiyoruz.
     if ! "${DOCKER[@]}" pull "${BASE_IMAGE}"; then
         warn "${BASE_IMAGE} cekilemedi; docker build sirasinda yeniden denenecek."
     fi
-    log "Kali imaji olusturuluyor: ${IMAGE} (Dockerfile)"
+    log "Kali terminal imaji olusturuluyor: ${IMAGE} (Dockerfile / cli)"
     "${DOCKER[@]}" build --file "${ROOT_DIR}/Dockerfile" --tag "${IMAGE}" "${ROOT_DIR}"
+}
+
+build_desktop_image() {
+    log "Kali masaustu imaji olusturuluyor: ${DESKTOP_IMAGE} (Dockerfile / desktop)"
+    "${DOCKER[@]}" build \
+        --file "${ROOT_DIR}/Dockerfile" \
+        --target desktop \
+        --tag "${DESKTOP_IMAGE}" \
+        "${ROOT_DIR}"
+}
+
+ensure_target_image() {
+    if ! "${DOCKER[@]}" image inspect "${TARGET_IMAGE}" >/dev/null 2>&1; then
+        if [[ "${DESKTOP}" == "1" ]]; then
+            build_desktop_image
+        else
+            build_cli_image
+        fi
+    fi
+}
+
+create_container() {
+    local -a args=(
+        --detach
+        --name "${CONTAINER}"
+        --hostname kali
+        --volume "${WORKSPACE}:/workspace"
+        --workdir /workspace
+    )
+    local -a cmd=(tail -f /dev/null)
+
+    if [[ "${DESKTOP}" == "1" ]]; then
+        # Konteyner icindeki sabit 6080/5901 portlarini Codespace'e yayinla.
+        args+=(
+            --publish "${WEB_PORT}:6080"
+            --publish "${VNC_PORT}:5901"
+            --env "KALI_VNC_PASSWORD=${VNC_PASSWORD}"
+            --env "KALI_VNC_RESOLUTION=${RESOLUTION}"
+        )
+        cmd=()   # Dockerfile / desktop hedefinin CMD'si (kali-desktop) calissin
+    fi
+
+    "${DOCKER[@]}" run "${args[@]}" "${TARGET_IMAGE}" "${cmd[@]}" >/dev/null
+}
+
+setup_portainer() {
+    if [[ "${PORTAINER}" != "1" ]]; then
+        return 0
+    fi
+    if "${DOCKER[@]}" container inspect "${PORTAINER_CONTAINER}" >/dev/null 2>&1; then
+        if [[ "$("${DOCKER[@]}" container inspect -f '{{.State.Running}}' "${PORTAINER_CONTAINER}")" != "true" ]]; then
+            "${DOCKER[@]}" start "${PORTAINER_CONTAINER}" >/dev/null
+        fi
+        return 0
+    fi
+    log "Portainer (Docker web paneli) baslatiliyor: ${PORTAINER_PORT}"
+    "${DOCKER[@]}" run \
+        --detach \
+        --name "${PORTAINER_CONTAINER}" \
+        --restart unless-stopped \
+        --publish "${PORTAINER_PORT}:9443" \
+        --volume /var/run/docker.sock:/var/run/docker.sock \
+        --volume portainer_data:/data \
+        portainer/portainer-ce:latest >/dev/null
+}
+
+wait_for_desktop() {
+    if [[ "${DESKTOP}" != "1" ]]; then
+        return 0
+    fi
+    if ! command -v curl >/dev/null 2>&1; then
+        return 0
+    fi
+    local attempt
+    for (( attempt = 1; attempt <= DESKTOP_WAIT_ATTEMPTS; attempt++ )); do
+        if curl -fsS -o /dev/null "http://127.0.0.1:${WEB_PORT}/" 2>/dev/null; then
+            return 0
+        fi
+        sleep 1
+    done
+    warn "noVNC ${WEB_PORT} portunda henuz yanit vermiyor; 'docker logs ${CONTAINER}' ile kontrol edin."
+    return 0
 }
 
 if ! command -v docker >/dev/null 2>&1; then
@@ -72,30 +179,33 @@ if ! wait_for_docker; then
 fi
 
 if (( START_ONLY == 0 )); then
-    build_image
+    build_cli_image
+    if [[ "${DESKTOP}" == "1" ]]; then
+        build_desktop_image
+    fi
 fi
 
 if "${DOCKER[@]}" container inspect "${CONTAINER}" >/dev/null 2>&1; then
-    if [[ "$("${DOCKER[@]}" container inspect -f '{{.State.Running}}' "${CONTAINER}")" != "true" ]]; then
+    current_image="$("${DOCKER[@]}" container inspect -f '{{.Config.Image}}' "${CONTAINER}")"
+    if [[ "${current_image}" != "${TARGET_IMAGE}" ]]; then
+        # Ornegin masaustu sonradan acildiysa / kapatildiysa eski konteyneri yeniden kur.
+        log "Konteyner yeniden olusturuluyor (imaj: ${current_image} -> ${TARGET_IMAGE})"
+        "${DOCKER[@]}" rm -f "${CONTAINER}" >/dev/null
+        ensure_target_image
+        create_container
+    elif [[ "$("${DOCKER[@]}" container inspect -f '{{.State.Running}}' "${CONTAINER}")" != "true" ]]; then
         log "${CONTAINER} konteyneri yeniden baslatiliyor"
         "${DOCKER[@]}" start "${CONTAINER}" >/dev/null
     else
         log "${CONTAINER} konteyneri zaten calisiyor"
     fi
 else
-    # postStart sirasinda imaj (Docker volume'u sifirlandiysa) yoksa yeniden kur.
-    if ! "${DOCKER[@]}" image inspect "${IMAGE}" >/dev/null 2>&1; then
-        build_image
-    fi
+    ensure_target_image
     log "Kali konteyneri olusturuluyor: ${CONTAINER}"
-    "${DOCKER[@]}" run --detach \
-        --name "${CONTAINER}" \
-        --hostname kali \
-        --volume "${WORKSPACE}:/workspace" \
-        --workdir /workspace \
-        "${IMAGE}" \
-        tail -f /dev/null >/dev/null
+    create_container
 fi
+
+setup_portainer
 
 # Codespace icinden `kali` yazarak Kali kabuguna girmek icin kisa yol.
 install_kali_command() {
@@ -147,8 +257,21 @@ KALI_HELPER
 }
 
 install_kali_command
+wait_for_desktop
 
 log "Kali hazir!"
 printf '  kali                         -> Kali kabugu\n'
 printf '  docker exec -it %s bash    -> ayni islem\n' "${CONTAINER}"
 printf '  docker ps                    -> calisan konteynerler\n'
+if [[ "${DESKTOP}" == "1" ]]; then
+    printf '\n  Masaustu (noVNC) : http://localhost:%s/vnc.html\n' "${WEB_PORT}"
+    if [[ -n "${CODESPACE_NAME:-}" ]]; then
+        domain="${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN:-app.github.dev}"
+        printf '  Codespace URL    : https://%s-%s.%s/vnc.html\n' "${CODESPACE_NAME}" "${WEB_PORT}" "${domain}"
+    fi
+    printf '  VNC sifresi      : %s\n' "${VNC_PASSWORD:-(yok)}"
+    printf '  VNC portu        : %s\n' "${VNC_PORT}"
+fi
+if [[ "${PORTAINER}" == "1" ]]; then
+    printf '  Portainer        : https://localhost:%s\n' "${PORTAINER_PORT}"
+fi

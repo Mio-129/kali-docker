@@ -1,10 +1,25 @@
 {
-  "name": "Kali Docker (Codespaces)",
+  "name": "Kali Docker + Masaustu (Codespaces)",
   "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
   "features": {
     "ghcr.io/devcontainers/features/docker-in-docker:2": {
       "version": "latest",
       "moby": true
+    }
+  },
+  "forwardPorts": [6080, 5901, 9443],
+  "portsAttributes": {
+    "6080": {
+      "label": "Kali Masaustu (noVNC)",
+      "onAutoForward": "openPreview"
+    },
+    "5901": {
+      "label": "Kali VNC",
+      "onAutoForward": "silent"
+    },
+    "9443": {
+      "label": "Portainer - opsiyonel Docker paneli",
+      "onAutoForward": "silent"
     }
   },
   "remoteUser": "vscode",
