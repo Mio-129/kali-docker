@@ -20,8 +20,12 @@ jobs:
       run: |
         python3 -m json.tool .devcontainer/devcontainer.json > /dev/null
         python3 -m json.tool .devcontainer/kali/devcontainer.json > /dev/null
-        bash -n .devcontainer/setup-kali.sh
-        if command -v shellcheck >/dev/null 2>&1; then shellcheck .devcontainer/setup-kali.sh; fi
+        for script in .devcontainer/setup-kali.sh kali-desktop.sh; do
+          bash -n "$script"
+          if command -v shellcheck >/dev/null 2>&1; then shellcheck "$script"; fi
+        done
 
+    # Varsayilan (son) stage `cli` oldugu icin bu build hafif Kali arac setini kurar;
+    # `desktop` hedefi (XFCE + noVNC) yalnizca Codespace icinde build edilir.
     - name: Build the Docker image
       run: docker build . --file Dockerfile --tag kali-docker:$(date +%s)
