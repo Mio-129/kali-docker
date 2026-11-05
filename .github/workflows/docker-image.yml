@@ -20,6 +20,7 @@ jobs:
       run: |
         python3 -m json.tool .devcontainer/devcontainer.json > /dev/null
         python3 -m json.tool .devcontainer/kali/devcontainer.json > /dev/null
+        python3 -m json.tool .devcontainer/desktop/devcontainer.json > /dev/null
         for script in .devcontainer/setup-kali.sh kali-desktop.sh; do
           bash -n "$script"
           if command -v shellcheck >/dev/null 2>&1; then shellcheck "$script"; fi

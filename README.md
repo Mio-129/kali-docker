@@ -56,6 +56,36 @@ docker ps                         # çalışan konteynerler
 
 Terminal profili olarak **Kali Linux** da seçilebilir (VS Code → Terminal profili).
 
+## Docker CLI yoksa / recovery mode
+
+`setup-kali.sh` artık sadece "Docker-in-Docker özelliğini etkinleştirin" demiyor; **kendisi kuruyor**:
+
+1. `docker` CLI yoksa paket yöneticisine göre kurar:
+   - Debian/Ubuntu/Kali → `apt-get install docker.io`
+   - Alpine → `apk add docker docker-cli`
+   - Fedora/RHEL → `dnf/yum install docker`
+2. `docker-in-docker` feature'ının izi (`/usr/local/share/docker-init.sh`) yoksa kendi `dockerd`'sini
+   başlatır: `--storage-driver=vfs --iptables=false --bridge=none` (ayrıcalıksız ortamlara uyumlu).
+3. Bu "fallback" modda port yayınlama yerine `--network=host` kullanılır; `docker build` de
+   `--network=host` ile çalışır, böylece noVNC yine Codespace'in `6080` portuna bağlanır.
+
+`KALI_AUTO_INSTALL_DOCKER=0` ile bu otomatik kurulum kapatılabilir. Tanılama için
+`/tmp/kali-dockerd.log` ve `docker info` kullanılabilir.
+
+> **Önemli:** GitHub'ın *recovery* konteyneri çıplak Alpine'dır ve genellikle `dockerd`
+> çalıştıracak yetkilere (CAP_SYS_ADMIN) sahip değildir; yani bu fallback orada her zaman
+> çalışmayabilir. Recovery modundaysanız asıl düzeltme `.devcontainer/devcontainer.json`'u
+> onarıp **Codespaces: Rebuild Container** yapmaktır. Hızlı çözüm olarak aşağıdaki
+> **DinD'siz masaüstü** yapılandırmasını seçebilirsiniz.
+
+### DinD'siz masaüstü (Docker gerektirmez)
+
+`.devcontainer/desktop/devcontainer.json` → **`Kali Masaustu (DinD'siz)`**: Codespace'in kendisi
+doğrudan `Dockerfile`'ın `desktop` hedefinden kurulur, iç içe Docker / feature / `docker` CLI
+gerekmez. `6080` portunda noVNC masaüstü yine açılır (şifre `kali`). Codespace oluştururken
+"Dev container configuration" açılır menüsünden bunu seçin. Bu modda `kali` kısayolu ve
+`docker` komutları yoktur — terminalin kendisi Kali'dir.
+
 ### Sadece terminal istiyorsan
 
 `KALI_DESKTOP=0` ortam değişkeniyle masaüstü kapatılır; XFCE imajı build edilmez, konteyner
@@ -71,7 +101,8 @@ script onu otomatik olarak yeniden oluşturur.
 
 `Kali Linux (dogrudan, Docker'siz)` yapılandırması (`.devcontainer/kali/devcontainer.json`)
 Codespace'i doğrudan `Dockerfile`'ın `cli` hedefinden kurar; iç içe Docker ve noVNC masaüstü
-olmaz — terminalin kendisi Kali'dir. Codespace oluştururken "Dev container configuration"
+olmaz — terminalin kendisi Kali'dir. Masaüstü de isterseniz `Kali Masaustu (DinD'siz)`
+yapılandırmasını seçin (yukarıya bakın). Codespace oluştururken "Dev container configuration"
 seçeneğinden bunu seçin.
 
 ## Yerel kullanım (Codespace olmadan)
@@ -99,7 +130,9 @@ docker build --build-arg KALI_PACKAGES="kali-linux-headless" -t kali-docker:full
 
 | Değişken | Yer | Varsayılan | Açıklama |
 | --- | --- | --- | --- |
+| `KALI_AUTO_INSTALL_DOCKER` | Codespace env | `1` | `0` = Docker eksikse kurma, sadece uyar |
 | `KALI_DESKTOP` | Codespace env | `1` | `0` = masaüstü yok, sadece terminal |
+| `KALI_FALLBACK_WAIT_ATTEMPTS` | Codespace env | `10` (~20 sn) | Kendi `dockerd`'mizin hazır olmasını bekleme |
 | `KALI_WEB_PORT` | Codespace env | `6080` | noVNC host portu |
 | `KALI_VNC_PORT` | Codespace env | `5901` | VNC host portu |
 | `KALI_VNC_PASSWORD` | Codespace env | `kali` | noVNC/VNC şifresi (VNC en fazla 8 karakter) |
