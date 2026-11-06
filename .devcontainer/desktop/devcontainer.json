@@ -1,0 +1,24 @@
+{
+  "name": "Kali Masaustu (DinD'siz)",
+  "build": {
+    "dockerfile": "../../Dockerfile",
+    "context": "../..",
+    "target": "desktop"
+  },
+  "forwardPorts": [6080, 5901],
+  "portsAttributes": {
+    "6080": {
+      "label": "Kali Masaustu (noVNC)",
+      "onAutoForward": "openPreview"
+    },
+    "5901": {
+      "label": "Kali VNC",
+      "onAutoForward": "silent"
+    }
+  },
+  "remoteUser": "root",
+  "containerEnv": {
+    "KALI_VNC_PASSWORD": "kali"
+  },
+  "postStartCommand": "curl -fsS http://127.0.0.1:6080/ >/dev/null 2>&1 || (nohup /usr/local/bin/kali-desktop >/tmp/kali-desktop.log 2>&1 &)"
+}
